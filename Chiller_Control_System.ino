@@ -34,10 +34,6 @@ OneWire oneWire(ONE_WIRE_BUS);
 
 DallasTemperature sensors(&oneWire);
 
-//static struct pt pt1;
-
-//static struct pt pt2;
-
 // Addresses of 5 DS18B20s
 uint8_t sensor1[8] = { 0x28, 0xA9, 0xA9, 0x56, 0xB5, 0x01, 0x3C, 0x95 };
 uint8_t sensor2[8] = { 0x28, 0x39, 0x00, 0x56, 0xB5, 0xFF, 0x3C, 0xA1 };
@@ -50,8 +46,7 @@ float temp1, temp2, temp3;
 
 // middle of the range where we want the temp to be
 char setPoint[4];
- // Reset pin not used but needed for library
-// #define OLED_RESET 4
+
 //Adafruit_SSD1306 display(OLED_RESET);
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 32 // OLED display height, in pixels
@@ -87,7 +82,13 @@ static int setPointArray[3];
 
 // Create keypad object
 Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS);
- 
+
+void TCA9548A(uint8_t bus)
+{
+  Wire.beginTransmission(0x70);  // TCA9548A address is 0x70
+  Wire.write(1 << bus);          // send byte to select bus
+  Wire.endTransmission();
+}
 void setup() {
 
   Serial.begin(9600); // Sets up serial monitor output
@@ -96,7 +97,20 @@ void setup() {
   // Start Wire library for I2C
   Wire.begin();
   
-  // initialize OLED with I2C addr 0x3C
+  // Set multiplexer to channel 0 and initialize OLED-1 with I2C addr 0x3C
+  TCA9548A(0);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+ 
+  // Set multiplexer to channel 1 and initialize OLED-2 with I2C addr 0x3C
+  TCA9548A(1);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  
+  // Set multiplexer to channel 2 and initialize OLED-3 with I2C addr 0x3C
+  TCA9548A(2);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
+  // Set multiplexer to channel 7 and initialize OLED-4 with I2C addr 0x3C
+  TCA9548A(7);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
   pinMode(13,OUTPUT);//Sensor 1 Cooling output
@@ -105,8 +119,6 @@ void setup() {
  
   digitalWrite(4,LOW);
 
-  //PT_INIT(&pt1);
-  //PT_INIT(&pt2);
   // Fills in TempHot array with addresses
   tempHot[0] = 10;
   tempHot[1] = 12;
@@ -115,62 +127,12 @@ void setup() {
   setPointArray[0] = 40.00;
   setPointArray[1] = 40.00;
   setPointArray[2] = 40.00;
-  // Go through loop 3 times
-//  for(int i = 0; i<3; i++){
-//    //set inputEntered to false
-//    bool inputEntered = false;
-//    // while input entered is false, go through loop  
-//    while (inputEntered == false){
-//      // get user input from Keypad
-//      customKey = customKeypad.getKey();
-//      // if it's a digit, add to to setPoint string
-//      if(isdigit(customKey)){
-//        strncat(setPoint, &customKey,1);
-//        Serial.println(setPointArray[currSen]);
-//      }
-//      display.clearDisplay();
-//      display.setTextColor(WHITE);
-//      display.setCursor(0,00); 
-//      display.print("Enter setpoint for ");
-//      display.setCursor(0,10); 
-//      display.print("Sensor ");
-//      display.print(i);
-//      display.print(": ");
-//      display.print(setPointArray[currSen]);
-//      display.display(); 
-//      // If user input is '.'
-//      if(customKey == '.'){
-//        // convert setPoint string to int
-//        static int j;
-//        j = atoi(setPoint);
-//        // set SetPointArray element to newly made int
-//        setPointArray[i] = j;
-//        // set setPoint string back to being empty
-//        memset(&setPoint[0], 0,sizeof(setPoint));
-//        // create new text showing the input
-//        display.clearDisplay();
-//        display.setTextColor(WHITE);
-//        display.setCursor(0,00); 
-//        display.print("NEW setpoint for ");
-//        display.setCursor(0,10); 
-//        display.print("Sensor ");
-//        display.print(i);
-//        display.print("is ");
-//        display.print(setPointArray[currSen]);
-//        display.display(); 
-//        // Delay the program so new text can be seen
-//        delay(10);
-//        // inputEnter is true, exiting the whole loop
-//        // and moving to next part of for loop
-//        inputEntered = true;
-//      }
-//    }
-//  }
+
+  sprintf(setPoint,"%d",setPointArray[currSen]);
 }
-void ptTrackSensorTemp(){//(struct pt *pt){ 
-  //PT_BEGIN(pt);
+
+void ptTrackSensorTemp(){ 
   for(int i = 0; i<3; i++){
-    
     //If temp1 val above setPoint + 2, mark as too hot
     if (tempArray[i] > setPointArray[i] + 2)
     {
@@ -180,57 +142,71 @@ void ptTrackSensorTemp(){//(struct pt *pt){
       digitalWrite(tempHot[i],1);//When using PN2222A 1 Turns off FET
     }  
   }
-  //PT_END(pt);
 }
-void ptDisplay(){//(struct pt *pt){
-  //PT_BEGIN(pt);
+
+void ptDisplay(int curAdd){
+// write to screen
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setCursor(0,00); 
+  display.print("Sensor ");
+  display.print(curAdd);
+  display.print(": ");
+  display.print(tempArray[curAdd]);
+  display.print(" F");
+  display.setCursor(0,10); 
+  display.print("Baseline: ");
+  if(curAdd == currSen){
+    display.print(setPoint);
+    display.print(" F");
+    if(customKey == '.'){
+      display.print(" Cleared");
+    }
+    else if(customKey == 'D'){
+      display.print(" Updated");
+    }
+    display.setCursor(0,20);
+    display.print("CURR");
+  }
+  else{
+    display.print(setPointArray[curAdd]);
+    display.print(" F");
+  }
+  display.display(); 
+}
+void userInput(){
   // if customKey is '#', add one to currSen,
   // thus changing the current sensor being looked at
   // if currSen is greater than amount of sensors, go back to first sensor
   if(customKey == '#'){
-    if(currSen < 2){
-      currSen += 1;    
+    if(currSen < 3){
+      currSen += 1; 
     }
-    else{
+    else if(currSen == 3){
+      currSen = 7;
+    }
+    else if(currSen == 7){
       currSen = 0;
     }
+    sprintf(setPoint,"%d",setPointArray[currSen]);
   }// If user input is digit, add it to setPoint string
   else if(isdigit(customKey)){
     strncat(setPoint, &customKey,1);
     Serial.println(setPointArray[currSen]);
   }// If user input is '.'
   else if(customKey == '.'){
-    //Serial.println("Before");
-    //Serial.println(setPointArray[currSen]);
+    // set setPoint string back to being empty
+    memset(&setPoint[0], 0,sizeof(setPoint));
+  }// if user input is 'D', display current setpointArray element
+  else if (customKey == 'D'){
     // Convert string setPoint to an int value
     // and set current SetPointArray element
     // as that value
     static int i;
     i = atoi(setPoint);
     setPointArray[currSen] = i;
-    //Serial.println("After");
-    //Serial.println(setPointArray[currSen]);
-    // set setPoint string back to being empty
-    memset(&setPoint[0], 0,sizeof(setPoint));
-  }// if user input is 'D', display current setpointArray element
-  else if (customKey == 'D'){
     sprintf(setPoint,"%d",setPointArray[currSen]);
-  }// write to screen
-  display.clearDisplay();
-  display.setTextColor(WHITE);
-  display.setCursor(0,00); 
-  display.print("Sensor ");
-  display.print(currSen);
-  display.print(": ");
-  display.print(tempArray[currSen]);
-  display.print(" F");
-  display.setCursor(0,10); 
-  display.print("Baseline: ");
-  display.print(setPoint);
-  display.print(" F");
-  display.setCursor(0,20);
-  display.display(); 
-  //PT_END(pt);
+  }
 }
 void loop() {
   // Get temps from sensors and set temp values to them
@@ -245,6 +221,22 @@ void loop() {
 
   // Get key value if pressed
   customKey = customKeypad.getKey();
-  ptDisplay();//(&pt1);
-  ptTrackSensorTemp();//(&pt2);
+ // Set multiplexer to channel 0 and display "Display 1"
+  TCA9548A(0);
+  ptDisplay(0);
+  display.display();
+  // Set multiplexer to channel 1 and display "Display 2"
+  TCA9548A(1);
+  ptDisplay(1);
+  display.display();
+  // Set multiplexer to channel 2 and display "Display 2"
+  TCA9548A(2);
+  ptDisplay(2);
+  display.display();
+  // Set multiplexer to channel 7 and display "Display 2"
+  TCA9548A(7);
+  ptDisplay(7);
+  display.display();
+  userInput();
+  ptTrackSensorTemp();
 }
